@@ -7,6 +7,7 @@
 EthernetServer iperf_server(5001);
 
 static void usage();
+static void setup_eth_ip();
 static void test_iperf2();
 static void teensyMAC(uint8_t *mac);
 
@@ -72,7 +73,7 @@ void loop()
 
 static void usage()
 {
-  Serial.println("Teensy USB Host Experiments");
+  Serial.println("Teensy Ethernet Experiments");
   Serial.println(" h: show this help page");
   Serial.println(" 1: run iperf2 server");
 }
@@ -82,34 +83,60 @@ static void usage()
 static void test_iperf2()
 {
   Serial.println("Waiting for client");
-  Serial.print("Start client like iperf ");
+  Serial.print("Start client: iperf -c ");
   Serial.println(our_ip);
+  Serial.println("Press any key to leave when server is not active");
 
   for (;;)
   {
     EthernetClient client = iperf_server.available();
     if (client)
     {
-      uint8_t buf[1024];
+      static uint8_t buf[4096];
+      uint64_t bytes = 0;
+      uint64_t next_mbyte = 0;
+      int dots = 0;
 
       analogWrite(LED_BUILTIN, 250);
 
-      Serial.println("Here is new a client for check arduino performance");
+      Serial.print("Client connected ");
+      Serial.println(client.remoteIP());
+
       while (client.connected())
       {
         if (client.available()) {
-          client.read(buf, 1024);
-          Serial.println("reading client data");
+          uint32_t read = client.read(buf, sizeof(buf));
+          bytes += read;
+        }
+
+        if (bytes > next_mbyte) {
+          next_mbyte = bytes + 1024*1024;          
+          Serial.print(".");
+          dots++;
+          if (dots == 80) {
+            dots = 0;
+            Serial.println();
+          }
+          analogWrite(LED_BUILTIN, dots % 2 == 0 ? 50 : 180);
         }
       }
+
       client.stop();
-      Serial.println("Client disonnected");
+      Serial.println("\nClient disconnected");
+
+      Serial.printf("Received %llu bytes\n");
 
       analogWrite(LED_BUILTIN, 20);
     }
+
+    if (Serial.available() > 0)
+    {
+      (void)Serial.read();
+      Serial.println("Leaving iperf server");
+      break;
+    }
   }
 }
-
 
 //-----------------------------------------------------------------------------
 
@@ -154,7 +181,7 @@ static void teensyMAC(uint8_t *mac)
   static char teensyMac[23];
 
 #if defined(HW_OCOTP_MAC1) && defined(HW_OCOTP_MAC0)
-  Serial.println("using HW_OCOTP_MAC* - see https://forum.pjrc.com/threads/57595-Serial-amp-MAC-Address-Teensy-4-0");
+  // Serial.println("using HW_OCOTP_MAC* - see https://forum.pjrc.com/threads/57595-Serial-amp-MAC-Address-Teensy-4-0");
   for (uint8_t by = 0; by < 2; by++)
     mac[by] = (HW_OCOTP_MAC1 >> ((1 - by) * 8)) & 0xFF;
   for (uint8_t by = 0; by < 4; by++)
